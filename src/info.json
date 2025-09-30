@@ -23,16 +23,14 @@
     },
     {
       "identifier": "model",
-      "type": "menu",
+      "type": "text",
       "title": "模型",
       "defaultValue": "gpt-4o-mini",
-      "menuValues": [
-        { "title": "GPT-4o mini", "value": "gpt-4o-mini" },
-        { "title": "GPT-4o", "value": "gpt-4o" },
-        { "title": "GPT-4.1", "value": "gpt-4.1" },
-        { "title": "GPT-4.1 mini", "value": "gpt-4.1-mini" },
-        { "title": "o3-mini", "value": "o3-mini" }
-      ]
+      "desc": "可选项。填写任意支持的模型名称，例如 gpt-4o-mini、gpt-4.1、o3-mini 等。",
+      "textConfig": {
+        "type": "visible",
+        "placeholderText": "例如：gpt-4o-mini"
+      }
     },
     {
       "identifier": "temperature",
@@ -77,7 +75,7 @@
       }
     },
     {
-      "identifier": "apiUrl",
+      "identifier": "base_url",
       "type": "text",
       "title": "自定义 API Base URL",
       "desc": "如果您的网络环境需要代理才能访问 OpenAI API, 可在这里修改为反代 API 的地址",
