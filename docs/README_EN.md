@@ -41,15 +41,33 @@ You can use the OpenAI API to polish and syntactically modify sentences by setti
 
 1. Install [Bob](https://bobtranslate.com/guide/#%E5%AE%89%E8%A3%85) (version >= 0.50), a translation and OCR software for the macOS platform
 
-2. Download this plugin: [openai-translator.bobplugin](https://github.com/jtsang4/bob-plugin-openaiapi/releases/latest)
+2. Download the latest `openai-translator.bobplugin` from [GitHub Releases](https://github.com/jtsang4/bob-plugin-openaiapi/releases/latest) or build it locally following the steps below
 
-3. Install this plugin
+3. Import the plugin into Bob via “Preferences > Services > Import Plugin”
 
 4. Get your access key from [OpenAI](https://platform.openai.com/api-keys)
 
 5. Enter the API KEY in Bob Preferences > Services > This plugin configuration interface's API KEY input box. You can configure multiple keys, base URLs, models, and custom prompts.
 
 6. (Optional) Install [PopClip](https://bobtranslate.com/guide/integration/popclip.html) to achieve the floating icon appearing near the mouse after selecting words
+
+## Build
+
+```bash
+git clone https://github.com/jtsang4/bob-plugin-openaiapi.git
+cd bob-plugin-openaiapi/src
+zip -r ../openai-translator.bobplugin ./*
+```
+
+The commands above produce an `openai-translator.bobplugin` file in the repository root containing all required scripts and configuration files.
+
+The repository ships with a GitHub Actions Release workflow that automatically packages the plugin and uploads the artifact to Releases whenever a `v*.*.*` tag is pushed.
+
+## Install
+
+1. Open Bob and go to “Preferences > Services”.
+2. Click the “+” button in the lower-left corner and choose “Import Plugin”.
+3. Select the generated `openai-translator.bobplugin` file to complete the installation.
 
 ## Thanks
 
