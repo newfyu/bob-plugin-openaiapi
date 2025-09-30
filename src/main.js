@@ -257,7 +257,12 @@ function translate(query) {
       });
   }
 
-  const {model, apiKeys, apiUrl, apiUrlPath} = $option;
+  const apiKeys = $option.apiKeys;
+  const optionModel = typeof $option.model === 'string' ? $option.model.trim() : '';
+  const resolvedModel = optionModel || 'gpt-4o-mini';
+  const apiUrl = typeof $option.apiUrl === 'string' ? $option.apiUrl.trim() : '';
+  const baseUrlOption = typeof $option.base_url === 'string' ? $option.base_url.trim() : '';
+  const apiUrlPath = typeof $option.apiUrlPath === 'string' ? $option.apiUrlPath.trim() : '';
 
   if (!apiKeys || typeof apiKeys !== 'string') {
     return query.onCompletion({
@@ -285,12 +290,12 @@ function translate(query) {
   const apiKey =
     apiKeySelection[Math.floor(Math.random() * apiKeySelection.length)];
 
-  const baseUrl = apiUrl || "https://api.openai.com";
+  const baseUrl = baseUrlOption || apiUrl || "https://api.openai.com";
   const urlPath = apiUrlPath || "/v1/chat/completions";
 
   const header = buildHeader(apiKey);
   const canStreamRequest = typeof $http !== 'undefined' && typeof $http.streamRequest === 'function' && typeof query.onStream === 'function';
-  const body = buildRequestBody(model, query, canStreamRequest);
+  const body = buildRequestBody(resolvedModel, query, canStreamRequest);
 
   (async () => {
     if (canStreamRequest) {
