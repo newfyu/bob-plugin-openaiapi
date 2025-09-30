@@ -40,15 +40,36 @@
 
 1. 安装 [Bob](https://bobtranslate.com/guide/#%E5%AE%89%E8%A3%85) (版本 >= 0.50)，一款 macOS 平台的翻译和 OCR 软件
 
-2. 下载此插件: [openai-translator.bobplugin](https://github.com/jtsang4/bob-plugin-openaiapi/releases/latest)
+2. 从 [GitHub Releases](https://github.com/jtsang4/bob-plugin-openaiapi/releases/latest) 下载最新的 `openai-translator.bobplugin`，或按照下文的构建流程在本地生成
 
-3. 安装此插件
+3. 在 Bob 偏好设置 > 服务 中选择导入插件，指向生成的 `openai-translator.bobplugin`
 
 4. 去 [OpenAI](https://platform.openai.com/api-keys) 获取你的 API KEY
 
 5. 把 API KEY 填入 Bob 偏好设置 > 服务 > 此插件配置界面的 API KEY 的输入框中，可配置多个 Key、Base URL、模型以及自定义提示词
 
 6. (可选) 安装 [PopClip](https://bobtranslate.com/guide/integration/popclip.html) 实现划词后鼠标附近出现悬浮图标
+
+## 构建
+
+```bash
+git clone <仓库地址>
+cd bob-plugin-openaiapi/src
+zip -r ../openai-translator.bobplugin ./*
+```
+
+> 将 `<仓库地址>` 替换为当前仓库的克隆地址，例如
+> `https://github.com/<your-account>/bob-plugin-openaiapi.git`。
+
+以上命令会在仓库根目录下生成 `openai-translator.bobplugin` 文件，包含运行插件所需的脚本与配置。
+
+仓库已配置 GitHub Actions Release 工作流，每次推送 `v*.*.*` 标签时会自动构建插件并将打包产物上传至 Releases 页面。
+
+## 安装
+
+1. 打开 Bob，进入「偏好设置 > 服务」。
+2. 点击左下角的「+」号，选择「导入插件」。
+3. 选择前面构建得到的 `openai-translator.bobplugin` 文件完成安装。
 
 ## 感谢
 
