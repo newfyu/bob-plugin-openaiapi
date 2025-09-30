@@ -54,10 +54,12 @@ You can use the OpenAI API to polish and syntactically modify sentences by setti
 ## Build
 
 ```bash
+
 git clone <repository-url>
 cd bob-plugin-openaiapi/src
 zip -r ../openai-translator.bobplugin ./*
 ```
+
 
 > Replace `<repository-url>` with the clone URL of this repository, for example
 > `https://github.com/<your-account>/bob-plugin-openaiapi.git`.
