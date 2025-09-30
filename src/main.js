@@ -75,7 +75,7 @@ function generatePrompts (query)  {
  * stream: boolean;
  * }}
  */
-function buildRequestBody(model, query) {
+function buildRequestBody(model, query, enableStream) {
   const {generatedSystemPrompt, generatedUserPrompt} = generatePrompts(query);
 
   // prompt
@@ -106,7 +106,7 @@ function buildRequestBody(model, query) {
     messages,
     temperature: Number($option.temperature ?? 0.7),
     max_tokens: 4096,
-    stream: true,
+    stream: !!enableStream,
   };
 }
 
@@ -191,13 +191,15 @@ function handleResponse(query, targetText, responseObj) {
           }
         }
 
-        query.onStream({
-          result: {
-            from: query.detectFrom,
-            to: query.detectTo,
-            toParagraphs: [resultText],
-          },
-        });
+        if (typeof query.onStream === 'function') {
+          query.onStream({
+            result: {
+              from: query.detectFrom,
+              to: query.detectTo,
+              toParagraphs: [resultText],
+            },
+          });
+        }
       }
 
       if (choice.finish_reason) {
@@ -287,45 +289,31 @@ function translate(query) {
   const urlPath = apiUrlPath || "/v1/chat/completions";
 
   const header = buildHeader(apiKey);
-  const body = buildRequestBody(model, query);
+  const canStreamRequest = typeof $http !== 'undefined' && typeof $http.streamRequest === 'function' && typeof query.onStream === 'function';
+  const body = buildRequestBody(model, query, canStreamRequest);
 
   (async () => {
-    let targetText = '';
-    let completed = false;
+    if (canStreamRequest) {
+      let targetText = '';
+      let completed = false;
 
-    await $http.streamRequest({
-      method: 'POST',
-      url: baseUrl + urlPath,
-      header,
-      body,
-      cancelSignal: query.cancelSignal,
-      streamHandler: (streamData) => {
-        const lines = streamData.text.split('\n');
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine) continue;
+      await $http.streamRequest({
+        method: 'POST',
+        url: baseUrl + urlPath,
+        header,
+        body,
+        cancelSignal: query.cancelSignal,
+        streamHandler: (streamData) => {
+          const lines = streamData.text.split('\n');
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
 
-          const parsedData = parseStreamData(trimmedLine);
-          if (!parsedData) continue; // 如果解析不到数据则跳过
+            const parsedData = parseStreamData(trimmedLine);
+            if (!parsedData) continue; // 如果解析不到数据则跳过
 
-          if (parsedData.done) {
-            if (completed) return;
-            completed = true;
-            query.onCompletion({
-              result: {
-                from: query.detectFrom,
-                to: query.detectTo,
-                toParagraphs: [targetText],
-              },
-            });
-            return;
-          }
-
-          if (parsedData.data) {
-            const { text, finished } = handleResponse(query, targetText, parsedData.data);
-            targetText = text;
-
-            if (finished && !completed) {
+            if (parsedData.done) {
+              if (completed) return;
               completed = true;
               query.onCompletion({
                 result: {
@@ -334,16 +322,123 @@ function translate(query) {
                   toParagraphs: [targetText],
                 },
               });
+              return;
+            }
+
+            if (parsedData.data) {
+              const { text, finished } = handleResponse(query, targetText, parsedData.data);
+              targetText = text;
+
+              if (finished && !completed) {
+                completed = true;
+                query.onCompletion({
+                  result: {
+                    from: query.detectFrom,
+                    to: query.detectTo,
+                    toParagraphs: [targetText],
+                  },
+                });
+              }
+            }
+          }
+        },
+        handler: (result) => {
+          if (result.error || (result.response && result.response.statusCode >= 400)) {
+            handleError(query, result);
+          }
+        },
+      });
+      return;
+    }
+
+    const requestOptions = {
+      method: 'POST',
+      url: baseUrl + urlPath,
+      header,
+      body,
+    };
+
+    if (query.cancelSignal) {
+      // @ts-ignore - cancelSignal is not available in older Bob versions
+      requestOptions.cancelSignal = query.cancelSignal;
+    }
+
+    const result = await $http.request(requestOptions);
+
+    if (result.error || (result.response && result.response.statusCode >= 400)) {
+      handleError(query, result);
+      return;
+    }
+
+    let data = result.data;
+    if (!data) {
+      handleError(query, result);
+      return;
+    }
+
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (err) {
+        $log.error(`Failed to parse response: ${data}`);
+        handleError(query, result);
+        return;
+      }
+    }
+
+    try {
+      const choices = data.choices || [];
+      let targetText = '';
+
+      const appendContent = (content) => {
+        if (!content) return;
+        if (typeof content === 'string') {
+          targetText += content;
+        } else if (Array.isArray(content)) {
+          for (const item of content) {
+            if (typeof item === 'string') {
+              targetText += item;
+            } else if (item && typeof item === 'object' && 'text' in item) {
+              targetText += item.text;
             }
           }
         }
-      },
-      handler: (result) => {
-        if (result.error || (result.response && result.response.statusCode >= 400)) {
-          handleError(query, result);
+      };
+
+      for (const choice of choices) {
+        const message = choice.message;
+        if (message) {
+          appendContent(message.content);
         }
-      },
-    });
+
+        const delta = choice.delta;
+        if (delta) {
+          appendContent(delta.content);
+        }
+      }
+
+      if (!targetText && data.error) {
+        handleError(query, { data, response: result.response });
+        return;
+      }
+
+      query.onCompletion({
+        result: {
+          from: query.detectFrom,
+          to: query.detectTo,
+          toParagraphs: [targetText],
+        },
+      });
+    } catch (err) {
+      query.onCompletion({
+        error: {
+          type: err._type || 'param',
+          message: err.message || '响应解析错误',
+          // @ts-ignore
+          addition: err._addition,
+        },
+      });
+    }
   })().catch((err) => {
     query.onCompletion({
       error: {
