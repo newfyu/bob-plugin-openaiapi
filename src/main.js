@@ -301,6 +301,7 @@ function translate(query) {
     if (canStreamRequest) {
       let targetText = '';
       let completed = false;
+      let streamBuffer = '';
 
       await $http.streamRequest({
         method: 'POST',
@@ -309,7 +310,10 @@ function translate(query) {
         body,
         cancelSignal: query.cancelSignal,
         streamHandler: (streamData) => {
-          const lines = streamData.text.split('\n');
+          streamBuffer += streamData.text;
+          const lines = streamBuffer.split(/\r?\n/);
+          streamBuffer = lines.pop() || '';
+
           for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
