@@ -53,12 +53,16 @@
 ## 构建
 
 ```bash
-git clone https://github.com/jtsang4/bob-plugin-openaiapi.git
+
+git clone <仓库地址>
 cd bob-plugin-openaiapi/src
 zip -r ../openai-translator.bobplugin ./*
 ```
 
-以上命令会在仓库根目录下生成 `openai-translator.bobplugin` 文件，包含运行插件所需的脚本与配置。
+
+> 将 `<仓库地址>` 替换为当前仓库的克隆地址，例如
+> `https://github.com/<your-account>/bob-plugin-openaiapi.git`。
+
 
 仓库已配置 GitHub Actions Release 工作流，每次推送 `v*.*.*` 标签时会自动构建插件并将打包产物上传至 Releases 页面。
 
