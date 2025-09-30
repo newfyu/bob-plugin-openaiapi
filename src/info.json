@@ -8,7 +8,7 @@
   "author": "jtsang <wtzeng1@gmail.com>",
   "homepage": "https://github.com/jtsang4/bob-plugin-openaiapi",
   "appcast": "https://raw.githubusercontent.com/jtsang4/bob-plugin-openaiapi/main/appcast.json",
-  "minBobVersion": "1.8.0",
+  "minBobVersion": "0.5.0",
   "options": [
     {
       "identifier": "apiKeys",
