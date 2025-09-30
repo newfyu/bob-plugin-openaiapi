@@ -11,16 +11,14 @@ function supportLanguages() {
  * @returns {{
  * "Accept": string;
  * "Content-Type": string;
- * "x-api-key": string;
- * "anthropic-version": string;
+ * Authorization: string;
  * }} The header object.
  */
 function buildHeader(apiKey) {
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',
-    'x-api-key': apiKey,
-    'anthropic-version': '2023-06-01',
+    Authorization: `Bearer ${apiKey}`,
   };
 }
 
@@ -72,7 +70,6 @@ function generatePrompts (query)  {
  * @returns {{
  * model: string;
  * messages: {role: string; content: string}[];
- * system: string;
  * temperature: number;
  * max_tokens: number;
  * stream: boolean;
@@ -95,10 +92,18 @@ function buildRequestBody(model, query) {
 
   $log.info(`System Prompt:${systemPrompt}\nUser Prompt:${userPrompt}`);
 
+  /** @type {{role: string, content: string}[]} */
+  const messages = [];
+
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+
+  messages.push({ role: 'user', content: userPrompt });
+
   return {
     model: model,
-    messages: [{role: 'user', content: userPrompt}],
-    system: systemPrompt,
+    messages,
     temperature: Number($option.temperature ?? 0.7),
     max_tokens: 4096,
     stream: true,
@@ -111,10 +116,12 @@ function buildRequestBody(model, query) {
  * @returns {void}
  */
 function handleError(query, result) {
-  const { statusCode } = result.response;
+  const statusCode = result.response ? result.response.statusCode : 0;
   const reason = statusCode >= 400 && statusCode < 500 ? 'param' : 'api';
   const errorMessage =
-    result.data && result.data.detail ? result.data.detail : '接口响应错误';
+    (result.data && (result.data.error?.message || result.data.error?.code)) ||
+    (result.data && result.data.detail) ||
+    '接口响应错误';
 
   // Enhanced error logging
   $log.error(`Translation error: ${errorMessage}. Status code: ${statusCode}. Full response: ${JSON.stringify(result)}`);
@@ -133,43 +140,57 @@ function handleError(query, result) {
  * @param {string} line 从流中接收到的一行数据
  */
 function parseStreamData(line) {
-  // 解析事件类型
-  const eventTypeMatch = line.match(/^event:\s*(.*)$/);
-  if (eventTypeMatch) {
-    return { eventType: eventTypeMatch[1] };
-  }
-  // 解析数据内容
   const dataMatch = line.match(/^data:\s*(.*)$/);
-  if (dataMatch) {
-    const data = JSON.parse(dataMatch[1]);
-    return { data };
+  if (!dataMatch) return null;
+
+  const dataStr = dataMatch[1];
+  if (dataStr === '[DONE]') {
+    return { done: true };
   }
-  return null;
+
+  try {
+    const data = JSON.parse(dataStr);
+    return { data };
+  } catch (err) {
+    $log.error(`Failed to parse stream data: ${dataStr}`);
+    return null;
+  }
 }
 
 /**
  * @param {Bob.TranslateQuery} query
  * @param {string} targetText
- * @param {string} responseObj
- * @returns {string}
+ * @param {any} responseObj
+ * @returns {{ text: string, finished: boolean }}
  */
 function handleResponse(query, targetText, responseObj) {
   let resultText = targetText;
+  let isFinished = false;
 
   try {
-    // @ts-ignore
-    const { type, delta, index } = responseObj;
+    if (!responseObj || !responseObj.choices) {
+      return { text: resultText, finished: false };
+    }
 
-    // 根据事件类型处理逻辑
-    switch (type) {
-      case 'content_block_start':
-        // 如有必要，处理 content_block_start 事件
-        break;
-      case 'content_block_delta':
-        // 处理文本变化
-        if (delta && delta.type === 'text_delta') {
-          resultText += delta.text;
+    for (const choice of responseObj.choices) {
+      const delta = choice.delta;
+
+      if (delta && delta.content) {
+        const deltaContent = delta.content;
+
+        if (typeof deltaContent === 'string') {
+          resultText += deltaContent;
+        } else if (Array.isArray(deltaContent)) {
+          for (const item of deltaContent) {
+            if (typeof item === 'string') {
+              resultText += item;
+            } else if (item && typeof item === 'object' && 'text' in item) {
+              // @ts-ignore - OpenAI may send structured content objects
+              resultText += item.text;
+            }
+          }
         }
+
         query.onStream({
           result: {
             from: query.detectFrom,
@@ -177,31 +198,14 @@ function handleResponse(query, targetText, responseObj) {
             toParagraphs: [resultText],
           },
         });
-        break;
-      case 'content_block_stop':
-        // 如有必要，处理 content_block_stop 事件
-        break;
-      case 'message_start':
-        // 如有必要，处理 message_start 事件
-        break;
-      case 'message_delta':
-        // 可以在此处理停止原因等 message_delta 信息
-        break;
-      case 'message_stop':
-        // 当消息流停止时，完成处理
-        query.onCompletion({
-          result: {
-            from: query.detectFrom,
-            to: query.detectTo,
-            toParagraphs: [resultText],
-          },
-        });
-        break;
-      default:
-        // 对无法识别的事件类型不做处理
-        break;
+      }
+
+      if (choice.finish_reason) {
+        isFinished = true;
+      }
     }
-    return resultText;
+
+    return { text: resultText, finished: isFinished };
   } catch (err) {
     // 错误处理
     query.onCompletion({
@@ -212,7 +216,7 @@ function handleResponse(query, targetText, responseObj) {
         addition: err._addition,
       },
     });
-    return resultText;
+    return { text: resultText, finished: true };
   }
 }
 
@@ -252,7 +256,18 @@ function translate(query) {
   }
 
   const {model, apiKeys, apiUrl, apiUrlPath} = $option;
-  const apiKeySelection = apiKeys.split(',').map((key) => key.trim());
+
+  if (!apiKeys || typeof apiKeys !== 'string') {
+    return query.onCompletion({
+      error: {
+        type: 'secretKey',
+        message: '配置错误 - 未填写 API Keys',
+        addtion: '请在插件配置中填写 API Keys',
+      },
+    });
+  }
+
+  const apiKeySelection = apiKeys.split(',').map((key) => key.trim()).filter(Boolean);
 
   if (!apiKeySelection.length) {
       return query.onCompletion({
@@ -268,14 +283,15 @@ function translate(query) {
   const apiKey =
     apiKeySelection[Math.floor(Math.random() * apiKeySelection.length)];
 
-  const baseUrl = apiUrl || "https://api.anthropic.com";
-  const urlPath = apiUrlPath || "/v1/messages";
+  const baseUrl = apiUrl || "https://api.openai.com";
+  const urlPath = apiUrlPath || "/v1/chat/completions";
 
   const header = buildHeader(apiKey);
   const body = buildRequestBody(model, query);
 
   (async () => {
     let targetText = '';
+    let completed = false;
 
     await $http.streamRequest({
       method: 'POST',
@@ -286,20 +302,44 @@ function translate(query) {
       streamHandler: (streamData) => {
         const lines = streamData.text.split('\n');
         for (const line of lines) {
-          const parsedData = parseStreamData(line);
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          const parsedData = parseStreamData(trimmedLine);
           if (!parsedData) continue; // 如果解析不到数据则跳过
 
-          if (parsedData.eventType) {
-            // 根据事件类型做一些操作，例如记录日志等
-            $log.info(`Received event: ${parsedData.eventType}`);
-          } else if (parsedData.data) {
-            // 这里调用 handleResponse 或其他函数处理具体数据
-            targetText = handleResponse(query, targetText, parsedData.data);
+          if (parsedData.done) {
+            if (completed) return;
+            completed = true;
+            query.onCompletion({
+              result: {
+                from: query.detectFrom,
+                to: query.detectTo,
+                toParagraphs: [targetText],
+              },
+            });
+            return;
+          }
+
+          if (parsedData.data) {
+            const { text, finished } = handleResponse(query, targetText, parsedData.data);
+            targetText = text;
+
+            if (finished && !completed) {
+              completed = true;
+              query.onCompletion({
+                result: {
+                  from: query.detectFrom,
+                  to: query.detectTo,
+                  toParagraphs: [targetText],
+                },
+              });
+            }
           }
         }
       },
       handler: (result) => {
-        if (result.error || result.response.statusCode >= 400) {
+        if (result.error || (result.response && result.response.statusCode >= 400)) {
           handleError(query, result);
         }
       },
